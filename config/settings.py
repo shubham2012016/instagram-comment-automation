@@ -234,3 +234,21 @@ if render_hostname:
     ]
 else:
     CSRF_TRUSTED_ORIGINS = []
+
+
+# Add these to config/settings.py
+
+INSTAGRAM_APP_ID = os.getenv("INSTAGRAM_APP_ID", "")
+INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "")
+INSTAGRAM_REDIRECT_URI = os.getenv(
+    "INSTAGRAM_REDIRECT_URI",
+    "https://instagram-comment-automation-tbas.onrender.com/connect/instagram/callback/",
+)
+
+INSTAGRAM_OAUTH_SCOPES = [
+    "instagram_business_basic",
+    "instagram_business_manage_comments",
+    "instagram_business_manage_messages",
+]
+
+META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v26.0")

@@ -20,9 +20,6 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-
-    path(
-        "webhooks/",
-        include("automation.urls"),
-    ),
+    path("webhooks/", include("automation.webhook_urls")),
+    path("connect/", include("automation.auth_urls")),
 ]
