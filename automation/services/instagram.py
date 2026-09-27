@@ -64,7 +64,7 @@ def get_profile(access_token: str) -> dict:
     response = requests.get(
         f"{GRAPH_BASE}/{GRAPH_VERSION}/me",
         params={
-            "fields": "id,username",
+            "fields": "user_id,username",
             "access_token": access_token,
         },
         timeout=20,
@@ -83,7 +83,7 @@ def connect_account(code: str) -> InstagramAccount:
         expires_at = timezone.now() + timedelta(seconds=int(long_lived["expires_in"]))
 
     account, _ = InstagramAccount.objects.update_or_create(
-        ig_user_id=str(profile["id"]),
+        ig_user_id=str(profile["user_id"]),
         defaults={
             "username": profile.get("username", ""),
             "access_token": long_lived["access_token"],
