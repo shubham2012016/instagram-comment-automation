@@ -26,6 +26,7 @@ def instagram_connect(request):
         "response_type": "code",
         "scope": ",".join(settings.INSTAGRAM_OAUTH_SCOPES),
         "state": state,
+        "enable_fb_login": "0",
     }
 
     url = "https://www.instagram.com/oauth/authorize?" + urlencode(params)
@@ -73,7 +74,7 @@ def instagram_callback(request):
 
 
 def _verify_signature(request) -> bool:
-    app_secret = getattr(settings, "META_APP_SECRET", "")
+    app_secret = getattr(settings, "INSTAGRAM_APP_SECRET", "")
     if not app_secret:
         return True
 
@@ -184,3 +185,5 @@ def instagram_webhook(request):
         )
 
     return JsonResponse({"status": "received"})
+
+
