@@ -117,6 +117,29 @@ def send_private_reply(account: InstagramAccount, comment_id: str, text: str) ->
     data = response.json()
     return str(data.get("message_id", ""))
 
+def send_public_comment_reply(
+    account: InstagramAccount,
+    comment_id: str,
+    text: str,
+) -> str:
+    response = requests.post(
+        f"{GRAPH_BASE}/{GRAPH_VERSION}/{comment_id}/replies",
+        params={
+            "message": text,
+            "access_token": account.access_token,
+        },
+        timeout=20,
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"Instagram public comment reply failed "
+            f"({response.status_code}): {response.text[:2000]}"
+        )
+
+    data = response.json()
+    return str(data.get("id", ""))
+
 
 def process_comment(
     account: InstagramAccount,
@@ -157,12 +180,19 @@ def process_comment(
 
     try:
         message_id = send_private_reply(account, comment_id, reply)
+
+        send_public_comment_reply(
+            account,
+            comment_id,
+            "Thanks for commenting! 📩 We’ve sent you the product link in your DM.",
+        )
+
         record.reply_message_id = message_id
         record.status = "replied"
         record.replied_at = timezone.now()
         record.save(update_fields=["reply_message_id", "status", "replied_at"])
     except Exception as exc:
-        logger.exception("Instagram private reply failed for %s", comment_id)
+        logger.exception("Instagram reply failed for %s", comment_id)
         record.status = "failed"
         record.error_message = str(exc)
         record.save(update_fields=["status", "error_message"])
