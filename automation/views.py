@@ -47,19 +47,30 @@ def instagram_callback(request):
 
     state = request.GET.get("state", "")
     expected_state = request.session.pop("instagram_oauth_state", "")
+
     if not expected_state or not secrets.compare_digest(state, expected_state):
-        return JsonResponse({"ok": False, "error": "Invalid OAuth state."}, status=400)
+        return JsonResponse(
+            {"ok": False, "error": "Invalid OAuth state."},
+            status=400,
+        )
 
     code = request.GET.get("code")
     if not code:
-        return JsonResponse({"ok": False, "error": "Missing authorization code."}, status=400)
+        return JsonResponse(
+            {"ok": False, "error": "Missing authorization code."},
+            status=400,
+        )
 
     try:
         account = connect_account(code)
     except Exception as exc:
         logger.exception("Instagram OAuth callback failed")
         return JsonResponse(
-            {"ok": False, "error": "Instagram connection failed.", "detail": str(exc)},
+            {
+                "ok": False,
+                "error": "Instagram connection failed.",
+                "detail": str(exc),
+            },
             status=502,
         )
 
@@ -75,10 +86,12 @@ def instagram_callback(request):
 
 def _verify_signature(request) -> bool:
     app_secret = getattr(settings, "INSTAGRAM_APP_SECRET", "")
+
     if not app_secret:
         return True
 
     signature = request.headers.get("X-Hub-Signature-256", "")
+
     if not signature.startswith("sha256="):
         return False
 
@@ -103,6 +116,29 @@ def _extract_comment_events(payload):
                 continue
 
             value = change.get("value", {})
+
+            media = value.get("media", {})
+            if isinstance(media, dict):
+                media_id = str(media.get("id", ""))
+            else:
+                media_id = str(
+                    value.get("media_id")
+                    or value.get("media")
+                    or ""
+                )
+
+            commenter = value.get("from", {})
+            if isinstance(commenter, dict):
+                commenter_id = str(commenter.get("id", ""))
+                commenter_username = str(
+                    commenter.get("username", "")
+                )
+            else:
+                commenter_id = str(value.get("from_id") or "")
+                commenter_username = str(
+                    value.get("username") or ""
+                )
+
             events.append(
                 {
                     "account_id": account_id,
@@ -111,29 +147,18 @@ def _extract_comment_events(payload):
                         or value.get("comment_id")
                         or ""
                     ),
-                    "media_id": str(
-                        value.get("media", {}).get("id")
-                        if isinstance(value.get("media"), dict)
-                        else value.get("media_id")
-                        or value.get("media", "")
-                    ),
-                    "commenter_id": str(
-                        value.get("from", {}).get("id")
-                        if isinstance(value.get("from"), dict)
-                        else value.get("from_id")
-                        or ""
-                    ),
-                    "commenter_username": str(
-                        value.get("from", {}).get("username")
-                        if isinstance(value.get("from"), dict)
-                        else value.get("username")
-                        or ""
-                    ),
+                    "media_id": media_id,
+                    "commenter_id": commenter_id,
+                    "commenter_username": commenter_username,
                     "text": str(value.get("text", "")),
                 }
             )
 
-    return [event for event in events if event["account_id"] and event["comment_id"]]
+    return [
+        event
+        for event in events
+        if event["account_id"] and event["comment_id"]
+    ]
 
 
 @csrf_exempt
@@ -143,23 +168,44 @@ def instagram_webhook(request):
         token = request.GET.get("hub.verify_token")
         challenge = request.GET.get("hub.challenge")
 
-        if mode == "subscribe" and token == settings.META_WEBHOOK_VERIFY_TOKEN:
-            return HttpResponse(challenge or "", status=200, content_type="text/plain")
+        if (
+            mode == "subscribe"
+            and token == settings.META_WEBHOOK_VERIFY_TOKEN
+        ):
+            return HttpResponse(
+                challenge or "",
+                status=200,
+                content_type="text/plain",
+            )
 
         return HttpResponse("Forbidden", status=403)
 
     if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
+        return JsonResponse(
+            {"error": "Method not allowed"},
+            status=405,
+        )
 
     if not _verify_signature(request):
-        return JsonResponse({"error": "Invalid signature"}, status=403)
+        return JsonResponse(
+            {"error": "Invalid signature"},
+            status=403,
+        )
 
     try:
-        payload = json.loads(request.body.decode("utf-8"))
+        payload = json.loads(
+            request.body.decode("utf-8")
+        )
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+        return JsonResponse(
+            {"error": "Invalid JSON"},
+            status=400,
+        )
 
-    logger.info("Instagram webhook payload received: %s", payload)
+    logger.info(
+        "Instagram webhook payload received: %s",
+        payload,
+    )
 
     for event in _extract_comment_events(payload):
         account = InstagramAccount.objects.filter(
@@ -175,6 +221,23 @@ def instagram_webhook(request):
             )
             continue
 
+        # Never process comments/replies created by our own
+        # Instagram account. Otherwise our public reply would
+        # trigger another webhook event and create a reply loop.
+        if (
+            event["commenter_id"] == str(account.ig_user_id)
+            or (
+                event["commenter_username"].strip().lower()
+                == account.username.strip().lower()
+            )
+        ):
+            logger.info(
+                "Ignoring self-authored comment %s from @%s.",
+                event["comment_id"],
+                event["commenter_username"],
+            )
+            continue
+
         process_comment(
             account,
             comment_id=event["comment_id"],
@@ -185,5 +248,3 @@ def instagram_webhook(request):
         )
 
     return JsonResponse({"status": "received"})
-
-
